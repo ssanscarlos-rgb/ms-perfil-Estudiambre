@@ -1,0 +1,20 @@
+{
+  "name": "ms-perfil-precios",
+  "version": "1.0.0",
+  "description": "EstudiAmbre - Microservicio de Perfil y Precios (Fase II)",
+  "main": "src/server.js",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "seed": "node --env-file-if-exists=.env scripts/seed.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.2.2",
+    "express": "^4.19.2",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.5.0"
+  }
+}

@@ -1,0 +1,41 @@
+name: Deploy ms-perfil-precios (test)
+
+on:
+  push:
+    branches: [test]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Empaquetar (sin devDependencies)
+        run: |
+          npm prune --omit=dev
+          zip -r release.zip . -x ".git/*" ".github/*" "test/*" "*.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: release.zip
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+      - name: Deploy a Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: release.zip
