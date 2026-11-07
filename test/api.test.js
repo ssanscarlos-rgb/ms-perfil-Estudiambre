@@ -2,11 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-delete process.env.STORAGE_CONNECTION_STRING;
+// Por defecto las pruebas usan el almacén en memoria; con TEST_MONGO=1 usan el MONGO_URI configurado.
+if (process.env.TEST_MONGO !== '1') delete process.env.MONGO_URI;
 delete process.env.CLIENT_CERT_THUMBPRINT;
 
 const { createApp } = require('../src/app');
-const { seed } = require('../scripts/seed');
 
 const jwt = (sub) => {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -17,11 +17,13 @@ const auth = (sub = 'user-1') => ({ Authorization: `Bearer ${jwt(sub)}`, 'Conten
 let server;
 let base;
 test.before(async () => {
-  await seed();
   server = createApp().listen(0);
   base = `http://127.0.0.1:${server.address().port}`;
 });
-test.after(() => server.close());
+test.after(async () => {
+  server.close();
+  await require('../src/repositories/store').closeDb();
+});
 
 test('health y swagger sin autenticación', async () => {
   assert.equal((await fetch(`${base}/health`)).status, 200);
@@ -67,7 +69,16 @@ test('PATCH /perfil es parcial y fusiona preferencias', async () => {
 
 test('PATCH /perfil rechaza campos de solo lectura y datos inválidos', async () => {
   const h = auth('user-bad');
-  for (const body of [{ racha: 99 }, { quincenaDias: [40] }, { quincenaDias: [15, 15] }, {}, { nombre: 5 }]) {
+  for (const body of [
+    { racha: 99 },
+    { quincenaDias: [40] },
+    { quincenaDias: [15, 15] },
+    {},
+    { nombre: 5 },
+    { preferencias: { $set: 1 } },
+    { preferencias: { 'a.b': 1 } },
+    { preferencias: { tema: { x: 1 } } },
+  ]) {
     const r = await fetch(`${base}/v1/perfil`, { method: 'PATCH', headers: h, body: JSON.stringify(body) });
     assert.equal(r.status, 400, JSON.stringify(body));
   }
@@ -79,30 +90,6 @@ test('el perfil es por usuario', async () => {
   await fetch(`${base}/v1/perfil`, { method: 'PATCH', headers: auth('a'), body: JSON.stringify({ nombre: 'Ana' }) });
   const b = await (await fetch(`${base}/v1/perfil`, { headers: auth('b') })).json();
   assert.notEqual(b.nombre, 'Ana');
-});
-
-test('GET /precios: ordenado por precio, sin tildes/mayúsculas y paginado', async () => {
-  const r = await fetch(`${base}/v1/precios?producto=ARROZ%20T%C3%8DO%20PEL%C3%93N%201%20KG&page=0&size=3`, { headers: auth() });
-  const p = await r.json();
-  assert.equal(p.page, 0);
-  assert.equal(p.size, 3);
-  assert.equal(p.totalElements, 4);
-  assert.equal(p.totalPages, 2);
-  assert.equal(p.content.length, 3);
-  const precios = p.content.map((x) => x.precio);
-  assert.deepEqual(precios, [...precios].sort((a, b) => a - b));
-  assert.deepEqual(Object.keys(p.content[0]).sort(), ['id', 'precio', 'reportes', 'tienda', 'zona']);
-
-  const p2 = await (await fetch(`${base}/v1/precios?producto=Arroz%20Tio%20Pelon%201%20kg&page=1&size=3`, { headers: auth() })).json();
-  assert.equal(p2.content.length, 1);
-});
-
-test('GET /precios valida parámetros y producto desconocido da página vacía', async () => {
-  assert.equal((await fetch(`${base}/v1/precios?page=-1`, { headers: auth() })).status, 400);
-  assert.equal((await fetch(`${base}/v1/precios?size=500`, { headers: auth() })).status, 400);
-  const p = await (await fetch(`${base}/v1/precios?producto=inexistente`, { headers: auth() })).json();
-  assert.equal(p.totalElements, 0);
-  assert.deepEqual(p.content, []);
 });
 
 test('filtro de certificado: 403 sin cert o con cert distinto, 200 con el correcto', async () => {

@@ -1,4 +1,4 @@
-name: Deploy ms-perfil-precios (test)
+name: Deploy ms-perfil (test)
 
 on:
   push:

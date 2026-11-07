@@ -34,7 +34,7 @@ function createApp() {
   app.get('/openapi.json', (_req, res) => res.json(spec));
 
   // API: certificado de APIM primero, luego identidad del usuario.
-  app.use('/v1', clientCert, auth, wrap(require('./routes/perfil')), wrap(require('./routes/precios')));
+  app.use('/v1', clientCert, auth, wrap(require('./routes/perfil')));
 
   app.use(notFound);
   app.use(errorHandler);

@@ -1,60 +1,94 @@
-const { TableClient } = require('@azure/data-tables');
+const { MongoClient } = require('mongodb');
 
-// Almacén mínimo sobre una tabla: get / upsert / list. Si no hay STORAGE_CONNECTION_STRING
-// usa memoria (solo desarrollo local y pruebas).
-const memory = new Map(); // tabla -> Map("pk|rk" -> entidad)
+// Acceso a datos mínimo sobre UNA colección. Dos implementaciones con la misma interfaz:
+//  - MongoDB (Atlas, o Cosmos DB for MongoDB) cuando existe MONGO_URI.
+//  - Memoria, solo para desarrollo local y pruebas (sin MONGO_URI).
+//
+//   get(id)                              -> documento | null
+//   set(id, campos)                      -> crea o actualiza ($set) el documento con _id = id
+//   page(filtro, { sort, skip, limit })  -> { items, total }   (filtro: igualdad por campo)
+//   ensureIndex(campos)                  -> índice para las consultas ordenadas (no hace nada en memoria)
 
-function memoryStore(table) {
-  if (!memory.has(table)) memory.set(table, new Map());
-  const rows = memory.get(table);
-  const key = (pk, rk) => `${pk}|${rk}`;
+const sinId = ({ _id, ...resto }) => ({ id: _id, ...resto });
+
+// ---------- Memoria ----------
+function memoryStore() {
+  const docs = new Map();
   return {
-    async get(pk, rk) {
-      const row = rows.get(key(pk, rk));
-      return row ? { ...row } : null;
+    async get(id) {
+      const d = docs.get(id);
+      return d ? sinId(d) : null;
     },
-    async upsert(pk, rk, data) {
-      const current = rows.get(key(pk, rk)) || {};
-      rows.set(key(pk, rk), { ...current, ...data, partitionKey: pk, rowKey: rk });
+    async set(id, campos) {
+      docs.set(id, { ...(docs.get(id) || {}), ...campos, _id: id });
     },
-    async list(pk) {
-      return [...rows.values()].filter((r) => !pk || r.partitionKey === pk).map((r) => ({ ...r }));
+    async page(filtro, { sort = [], skip = 0, limit = 10 } = {}) {
+      const todos = [...docs.values()].filter((d) => Object.entries(filtro).every(([k, v]) => d[k] === v));
+      todos.sort((a, b) => {
+        for (const [campo, dir] of sort) {
+          if (a[campo] !== b[campo]) return (a[campo] < b[campo] ? -1 : 1) * dir;
+        }
+        return 0;
+      });
+      return { items: todos.slice(skip, skip + limit).map(sinId), total: todos.length };
     },
+    async ensureIndex() {},
   };
 }
 
-function tableStore(table, connectionString) {
-  const client = TableClient.fromConnectionString(connectionString, table);
-  let ready;
-  const ensure = () => (ready ||= client.createTable().catch(() => {})); // ya existe: se ignora
-
-  return {
-    async get(pk, rk) {
-      await ensure();
-      try {
-        return await client.getEntity(pk, rk);
-      } catch (e) {
-        if (e.statusCode === 404) return null;
+// ---------- MongoDB ----------
+let dbPromise;
+function getDb() {
+  if (!dbPromise) {
+    const client = new MongoClient(process.env.MONGO_URI, { serverSelectionTimeoutMS: 8000 });
+    dbPromise = client
+      .connect()
+      .then((c) => c.db(process.env.MONGO_DB || 'estudiambre_perfil'))
+      .catch((e) => {
+        dbPromise = undefined; // permite reintentar en la siguiente petición
         throw e;
+      });
+  }
+  return dbPromise;
+}
+
+// Cierra la conexión (al apagar el servicio y al terminar las pruebas).
+async function closeDb() {
+  if (!dbPromise) return;
+  const db = await dbPromise.catch(() => null);
+  dbPromise = undefined;
+  await db?.client.close();
+}
+
+function mongoStore(nombre) {
+  const col = async () => (await getDb()).collection(nombre);
+  return {
+    async get(id) {
+      const d = await (await col()).findOne({ _id: id });
+      return d ? sinId(d) : null;
+    },
+    async set(id, campos) {
+      await (await col()).updateOne({ _id: id }, { $set: campos }, { upsert: true });
+    },
+    async page(filtro, { sort = [], skip = 0, limit = 10 } = {}) {
+      const c = await col();
+      const cursor = c.find(filtro);
+      if (sort.length) cursor.sort(sort);
+      const [items, total] = await Promise.all([cursor.skip(skip).limit(limit).toArray(), c.countDocuments(filtro)]);
+      return { items: items.map(sinId), total };
+    },
+    async ensureIndex(campos) {
+      try {
+        await (await col()).createIndex(campos);
+      } catch {
+        /* el índice es solo una optimización: si falla, las consultas siguen funcionando */
       }
     },
-    async upsert(pk, rk, data) {
-      await ensure();
-      await client.upsertEntity({ partitionKey: pk, rowKey: rk, ...data }, 'Merge');
-    },
-    async list(pk) {
-      await ensure();
-      const options = pk ? { queryOptions: { filter: `PartitionKey eq '${pk.replace(/'/g, "''")}'` } } : {};
-      const out = [];
-      for await (const e of client.listEntities(options)) out.push(e);
-      return out;
-    },
   };
 }
 
-function createStore(table) {
-  const cs = process.env.STORAGE_CONNECTION_STRING;
-  return cs ? tableStore(table, cs) : memoryStore(table);
+function createStore(nombreColeccion) {
+  return process.env.MONGO_URI ? mongoStore(nombreColeccion) : memoryStore();
 }
 
-module.exports = { createStore };
+module.exports = { createStore, closeDb };

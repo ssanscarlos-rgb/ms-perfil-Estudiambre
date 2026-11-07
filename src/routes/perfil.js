@@ -36,6 +36,13 @@ function validar(body) {
     if (!esObjetoPlano(preferencias) || JSON.stringify(preferencias).length > 2000) {
       throw new HttpError(400, 'preferencias debe ser un objeto de máximo 2000 caracteres');
     }
+    // Claves simples y valores simples: evita claves tipo operador de Mongo ("$set", "a.b").
+    const valido = Object.entries(preferencias).every(
+      ([k, v]) => /^[A-Za-z0-9_-]{1,40}$/.test(k) && (v === null || ['string', 'number', 'boolean'].includes(typeof v))
+    );
+    if (!valido) {
+      throw new HttpError(400, 'preferencias solo admite claves simples (letras, números, _ y -) con valores de texto, número o booleano');
+    }
   }
   const limpio = {};
   for (const k of EDITABLES) if (body[k] !== undefined) limpio[k] = typeof body[k] === 'string' ? body[k].trim() : body[k];

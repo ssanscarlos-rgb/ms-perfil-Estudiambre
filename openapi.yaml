@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: ms-perfil-precios
+  title: ms-perfil
   version: 1.0.0
   description: |
-    EstudiAmbre Fase II. Perfil del usuario y radar de precios.
+    EstudiAmbre Fase II. Perfil del usuario.
     Todas las rutas /v1 requieren `Authorization: Bearer <Google JWT>` (validado por APIM) y,
     en Azure, el certificado cliente de APIM. Los errores usan `{status, message, correlationId}`.
 servers:
@@ -25,7 +25,7 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
     patch:
       summary: Editar campos del perfil (parcial)
-      description: Solo `nombre`, `universidad`, `quincenaDias` y `preferencias`. `preferencias` se fusiona con las existentes.
+      description: Solo `nombre`, `universidad`, `quincenaDias` y `preferencias`. `preferencias` se fusiona con las existentes (claves simples; valores de texto, número o booleano).
       tags: [Perfil]
       requestBody:
         required: true
@@ -38,23 +38,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Perfil' }
-        '400': { $ref: '#/components/responses/Error' }
-        '401': { $ref: '#/components/responses/Error' }
-        '403': { $ref: '#/components/responses/Error' }
-  /v1/precios:
-    get:
-      summary: Precios por tienda, del más barato al más caro
-      tags: [Precios]
-      parameters:
-        - { name: producto, in: query, schema: { type: string }, description: Producto (sin distinguir mayúsculas ni tildes). Vacío = todos }
-        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
-        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
-      responses:
-        '200':
-          description: Página de precios
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PagePrecios' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
@@ -92,20 +75,4 @@ components:
         nombre: { type: string, maxLength: 60 }
         universidad: { type: string, maxLength: 100 }
         quincenaDias: { type: array, minItems: 1, maxItems: 2, items: { type: integer, minimum: 1, maximum: 31 } }
-        preferencias: { type: object, additionalProperties: true }
-    Precio:
-      type: object
-      properties:
-        id: { type: string }
-        tienda: { type: string }
-        zona: { type: string }
-        precio: { type: number }
-        reportes: { type: integer }
-    PagePrecios:
-      type: object
-      properties:
-        content: { type: array, items: { $ref: '#/components/schemas/Precio' } }
-        page: { type: integer }
-        size: { type: integer }
-        totalElements: { type: integer }
-        totalPages: { type: integer }
+        preferencias: { type: object, additionalProperties: { oneOf: [{ type: string }, { type: number }, { type: boolean }] } }
