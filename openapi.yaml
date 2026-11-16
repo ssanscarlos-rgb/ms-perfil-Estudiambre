@@ -41,6 +41,21 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /v1/perfil/racha:
+    post:
+      summary: Encender la racha de hoy (minijuego diario)
+      description: |
+        +1 si se encendió ayer; 1 si se había perdido o es la primera vez. Si ya estaba encendida hoy
+        no cambia nada (idempotente). El día es el de Costa Rica (UTC−6) y lo decide el servidor.
+      tags: [Perfil]
+      responses:
+        '200':
+          description: Perfil con la racha actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Perfil' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -63,7 +78,10 @@ components:
         nombre: { type: string }
         universidad: { type: string }
         quincenaDias: { type: array, items: { type: integer }, example: [15, 30] }
-        racha: { type: integer }
+        racha: { type: integer, description: Días seguidos con la racha encendida (0 si se perdió) }
+        rachaEncendidaHoy: { type: boolean, description: Si ya se jugó el minijuego hoy }
+        rachaPerdida: { type: integer, description: Días de la racha que se perdió (0 si no se perdió) }
+        rachaUltimoDia: { type: string, nullable: true, example: '2026-11-16', description: Último día (Costa Rica) en que se encendió }
         insignias: { type: array, items: { type: string } }
         preferencias: { type: object, additionalProperties: true }
         logoUrl: { type: string, nullable: true }

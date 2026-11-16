@@ -111,3 +111,48 @@ test('ruta inexistente: 404 con formato de error', async () => {
   assert.equal(r.status, 404);
   assert.equal((await r.json()).status, 404);
 });
+
+test('racha: se enciende una vez por día, sigue al día siguiente y se pierde si se salta uno', async () => {
+  const { _fijarReloj } = require('../src/racha');
+  const h = auth('user-racha');
+  const dia = (fecha, hora = '12:00') => Date.parse(`${fecha}T${hora}:00-06:00`);
+  const get = async () => (await fetch(`${base}/v1/perfil`, { headers: h })).json();
+  const encender = async () => {
+    const r = await fetch(`${base}/v1/perfil/racha`, { method: 'POST', headers: h });
+    assert.equal(r.status, 200);
+    return r.json();
+  };
+  try {
+    _fijarReloj(() => dia('2026-11-16', '00:01'));
+    let p = await get();
+    assert.equal(p.racha, 0);
+    assert.equal(p.rachaEncendidaHoy, false);
+    assert.equal(p.rachaPerdida, 0);
+    p = await encender();
+    assert.equal(p.racha, 1);
+    assert.equal(p.rachaEncendidaHoy, true);
+    assert.equal((await encender()).racha, 1, 'el mismo día no suma dos veces');
+
+    // Un PATCH del perfil no pisa la racha
+    await fetch(`${base}/v1/perfil`, { method: 'PATCH', headers: h, body: JSON.stringify({ universidad: 'TEC' }) });
+    assert.equal((await get()).racha, 1);
+
+    // Día siguiente (23:59 hora de CR = 05:59 UTC del otro día): sigue viva, falta encenderla
+    _fijarReloj(() => dia('2026-11-17', '23:59'));
+    p = await get();
+    assert.equal(p.racha, 1);
+    assert.equal(p.rachaEncendidaHoy, false);
+    assert.equal((await encender()).racha, 2);
+
+    // Se salta el 18: el 19 aparece perdida
+    _fijarReloj(() => dia('2026-11-19'));
+    p = await get();
+    assert.equal(p.racha, 0);
+    assert.equal(p.rachaPerdida, 2);
+    p = await encender();
+    assert.equal(p.racha, 1);
+    assert.equal(p.rachaPerdida, 0);
+  } finally {
+    _fijarReloj(null);
+  }
+});

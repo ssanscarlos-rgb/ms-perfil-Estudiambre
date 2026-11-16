@@ -59,4 +59,9 @@ router.patch('/perfil', async (req, res) => {
   res.json(await repo.patchPerfil(req.user.sub, cambios));
 });
 
+// Minijuego diario: enciende la racha de hoy (idempotente).
+router.post('/perfil/racha', async (req, res) => {
+  res.json(await repo.encenderRacha(req.user.sub));
+});
+
 module.exports = router;
