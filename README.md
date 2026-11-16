@@ -56,6 +56,11 @@ Todas (menos las dos últimas) también como *App settings* del App Service. Pon
 - **Logs** JSON por línea, con `correlationId` (`X-Correlation-Id` de APIM, o uno nuevo si falta).
 - **Seguridad con Mongo**: valores y claves validados antes de llegar a la base (sin claves tipo operador como `$set`).
 
+### Base de datos fuera de Azure (aprobada por el profesor)
+
+El enunciado pide servicios de datos en Azure. Para Perfil se usa **MongoDB Atlas**, que está fuera de Azure, y esta decisión fue **consultada y aprobada por el profesor Marcos Rodríguez**: Atlas es válido para este microservicio, y Perfil y Precios pueden compartir un mismo cluster con una base de datos separada por servicio (`estudiambre_perfil` y `estudiambre_precios`). Si en algún momento se exigiera que esté dentro de Azure, la alternativa es **Azure Cosmos DB for MongoDB**: el código no cambia, solo la variable `MONGO_URI`.
+
+
 ## Despliegue
 
 Push a `test` → GitHub Actions corre las pruebas y despliega al App Service (`.github/workflows/deploy-test.yml`). Si el Deployment Center ya generó su propio workflow, usa ese y borra este.
